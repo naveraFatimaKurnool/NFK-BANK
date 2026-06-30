@@ -5,7 +5,8 @@ import QuickActions from '../components/QuickActions.jsx';
 import ChatInput from '../components/ChatInput.jsx';
 import HistoryPanel from '../components/HistoryPanel.jsx';
 import { actionResponses } from '../data/quickActions.js';
-import { routeToAgent, generateResponse } from '../data/agents.js';
+import { routeToAgent, generateResponse, agents } from '../data/agents.js';
+import { getGeminiResponse } from '../services/geminiService.js';
 import '../styles/chatbot.css';
 
 const welcomeMessage = {
@@ -162,16 +163,34 @@ function Home() {
         if (stage === 'freezeConfirm') {
           setConversationEnded(true);
         }
+        setIsBusy(false);
       } else {
         const agentId = routeToAgent(text);
-        const reply = generateResponse(text, agentId);
-        if (reply) {
-          const botMsg = { role: 'assistant', text: reply, agent: agentId };
-          setMessages((prev) => [...prev, botMsg]);
+        const lower = text.toLowerCase();
+        const fraudKeywords = agents.secureAssist.keywords;
+        const isFraudTopic = fraudKeywords.some((k) => lower.includes(k));
+
+        if (isFraudTopic) {
+          const reply = generateResponse(text, agentId);
+          if (reply) {
+            const botMsg = { role: 'assistant', text: reply, agent: agentId };
+            setMessages((prev) => [...prev, botMsg]);
+          }
+          setIsBusy(false);
+        } else {
+          (async () => {
+            const agentName = agents[agentId]?.name || agentId;
+            const agentRole = agents[agentId]?.role || '';
+            const geminiReply = await getGeminiResponse(text, agentName, agentRole);
+            const reply = geminiReply || generateResponse(text, agentId);
+            if (reply) {
+              const botMsg = { role: 'assistant', text: reply, agent: agentId };
+              setMessages((prev) => [...prev, botMsg]);
+            }
+            setIsBusy(false);
+          })();
         }
       }
-
-      setIsBusy(false);
     }, 800);
   };
 
